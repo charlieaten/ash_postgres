@@ -12,6 +12,42 @@ defmodule AshPostgres.CombinationTest do
   alias AshPostgres.Test.Author
   alias AshPostgres.Test.Post
 
+  describe "combination relationship loads" do
+    test "limited union loads return resource structs for each parent" do
+      authors =
+        for name <- ["first", "second"] do
+          Author
+          |> Ash.Changeset.for_create(:create, %{first_name: name})
+          |> Ash.create!()
+        end
+
+      for author <- authors, title <- ["one", "two", "three"] do
+        Post
+        |> Ash.Changeset.for_create(:create, %{title: title, author_id: author.id})
+        |> Ash.create!()
+      end
+
+      posts =
+        Post
+        |> Ash.Query.combination_of([
+          Ash.Query.Combination.base(filter: expr(title == "one")),
+          Ash.Query.Combination.union_all(filter: expr(title != "one"))
+        ])
+        |> Ash.Query.sort(title: :asc)
+        |> Ash.Query.limit(2)
+        |> Ash.Query.select([:id, :title, :author_id])
+
+      loaded = Ash.load!(authors, posts: posts)
+
+      for author <- loaded do
+        assert [%Post{title: "one"} = first, %Post{title: "three"} = second] = author.posts
+        assert first.author_id == author.id
+        assert second.author_id == author.id
+        assert Ecto.get_meta(first, :state) == :loaded
+      end
+    end
+  end
+
   describe "combination_of with aggregates" do
     test "loading a first aggregate through a from_many? has_one on a combination query" do
       post =

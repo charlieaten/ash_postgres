@@ -960,24 +960,24 @@ defmodule AshPostgres.DataLayer do
           )
         )
         |> AshSql.Query.remap_mapped_fields(query)
-        |> then(fn results ->
-          if query.__ash_bindings__.context[:data_layer][:combination_of_queries?] do
-            Enum.map(results, fn result ->
-              struct(resource, result)
-              |> Map.put(:__meta__, %Ecto.Schema.Metadata{
-                state: :loaded
-              })
-            end)
-          else
-            results
-          end
-        end)
+        |> to_resource_records(query, resource)
         |> then(&{:ok, &1})
       end)
     end
   rescue
     e ->
       handle_raised_error(e, __STACKTRACE__, query, resource)
+  end
+
+  defp to_resource_records(results, query, resource) do
+    if query.__ash_bindings__.context[:data_layer][:combination_of_queries?] do
+      Enum.map(results, fn result ->
+        struct(resource, result)
+        |> Map.put(:__meta__, %Ecto.Schema.Metadata{state: :loaded})
+      end)
+    else
+      results
+    end
   end
 
   defp no_table?(%{from: %{source: {"", _}}}), do: true
@@ -1242,6 +1242,7 @@ defmodule AshPostgres.DataLayer do
             calculations_require_rewrite,
             aggregates_require_rewrite
           )
+          |> to_resource_records(query, destination_resource)
 
         {:ok, results}
 
