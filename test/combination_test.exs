@@ -48,6 +48,54 @@ defmodule AshPostgres.CombinationTest do
     end
   end
 
+  describe "combination relationship pagination" do
+    test "cursor filters retain lateral bindings and calculation values" do
+      author =
+        Author |> Ash.Changeset.for_create(:create, %{first_name: "author"}) |> Ash.create!()
+
+      posts =
+        for score <- [10, 20, 30] do
+          Post
+          |> Ash.Changeset.for_create(:create, %{
+            title: "post#{score}",
+            score: score,
+            author_id: author.id
+          })
+          |> Ash.create!()
+        end
+
+      query =
+        Post
+        |> Ash.Query.for_read(:keyset)
+        |> Ash.Query.combination_of([
+          Ash.Query.Combination.base(
+            filter: expr(score <= 20),
+            calculations: %{rank: calc(score, type: :integer)}
+          ),
+          Ash.Query.Combination.union_all(
+            filter: expr(score > 20),
+            calculations: %{rank: calc(score, type: :integer)}
+          )
+        ])
+        |> Ash.Query.sort([{calc(^combinations(:rank), type: :integer), :asc}, {:id, :asc}])
+        |> Ash.Query.select([:id])
+
+      first = Ash.load!(author, posts: Ash.Query.page(query, limit: 1)).posts
+      assert [%Post{id: first_id}] = first.results
+      assert first_id == Enum.at(posts, 0).id
+      assert first.more?
+
+      cursor = hd(first.results).__metadata__.keyset
+      second = Ash.load!(author, posts: Ash.Query.page(query, limit: 1, after: cursor)).posts
+      assert [%Post{id: second_id}] = second.results
+      assert second_id == Enum.at(posts, 1).id
+
+      cursor = hd(second.results).__metadata__.keyset
+      previous = Ash.load!(author, posts: Ash.Query.page(query, limit: 1, before: cursor)).posts
+      assert [%Post{id: ^first_id}] = previous.results
+    end
+  end
+
   describe "combination_of with aggregates" do
     test "loading a first aggregate through a from_many? has_one on a combination query" do
       post =

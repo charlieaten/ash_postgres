@@ -5056,8 +5056,12 @@ defmodule AshPostgres.DataLayer do
               select_merge: map(sub, ^fieldset)
             )
 
-          from(row in subquery(query_with_select), as: ^0)
-          |> AshSql.Bindings.default_bindings(resource, AshPostgres.SqlImplementation)
+          from(row in subquery(query_with_select), as: ^query.__ash_bindings__.root_binding)
+          |> AshSql.Bindings.default_bindings(
+            resource,
+            AshPostgres.SqlImplementation,
+            query.__ash_bindings__.context
+          )
           |> Map.update!(
             :__ash_bindings__,
             &Map.merge(&1, %{
@@ -5065,6 +5069,9 @@ defmodule AshPostgres.DataLayer do
               select: query.__ash_bindings__[:select],
               select_calculations: query.__ash_bindings__[:select_calculations],
               subquery_upgrade?: true,
+              lateral_join?: query.__ash_bindings__[:lateral_join?],
+              parent_bindings: query.__ash_bindings__[:parent_bindings],
+              parent_resources: query.__ash_bindings__[:parent_resources] || [],
               sort: query.__ash_bindings__[:sort],
               context: query.__ash_bindings__.context
             })
